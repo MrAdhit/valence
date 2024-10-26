@@ -5,7 +5,7 @@ use syn::{parse2, parse_quote, Data, DeriveInput, Error, Fields, Result};
 
 use crate::{add_trait_bounds, decode_split_for_impl, pair_variants_with_discriminants};
 
-pub fn derive_decode(item: TokenStream) -> Result<TokenStream> {
+pub(super) fn derive_decode(item: TokenStream) -> Result<TokenStream> {
     let mut input = parse2::<DeriveInput>(item)?;
 
     let input_name = input.ident;
@@ -23,8 +23,7 @@ pub fn derive_decode(item: TokenStream) -> Result<TokenStream> {
         .generics
         .lifetimes()
         .next()
-        .map(|l| l.lifetime.clone())
-        .unwrap_or_else(|| parse_quote!('a));
+        .map_or_else(|| parse_quote!('a), |l| l.lifetime.clone());
 
     match input.data {
         Data::Struct(struct_) => {
@@ -63,7 +62,7 @@ pub fn derive_decode(item: TokenStream) -> Result<TokenStream> {
 
             add_trait_bounds(
                 &mut input.generics,
-                quote!(::valence_protocol::Decode<#lifetime>),
+                quote!(::valence_protocol::__private::Decode<#lifetime>),
             );
 
             let (impl_generics, ty_generics, where_clause) =
@@ -83,7 +82,7 @@ pub fn derive_decode(item: TokenStream) -> Result<TokenStream> {
             })
         }
         Data::Enum(enum_) => {
-            let variants = pair_variants_with_discriminants(enum_.variants.into_iter())?;
+            let variants = pair_variants_with_discriminants(enum_.variants)?;
 
             let decode_arms = variants
                 .iter()
@@ -135,7 +134,7 @@ pub fn derive_decode(item: TokenStream) -> Result<TokenStream> {
 
             add_trait_bounds(
                 &mut input.generics,
-                quote!(::valence_protocol::Decode<#lifetime>),
+                quote!(::valence_protocol::__private::Decode<#lifetime>),
             );
 
             let (impl_generics, ty_generics, where_clause) =

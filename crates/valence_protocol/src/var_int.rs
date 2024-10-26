@@ -2,17 +2,36 @@ use std::io::{Read, Write};
 
 use anyhow::bail;
 use byteorder::ReadBytesExt;
+use derive_more::{Deref, DerefMut, From, Into};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{Decode, Encode};
 
 /// An `i32` encoded with variable length.
-#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    Deref,
+    DerefMut,
+    From,
+    Into,
+    Serialize,
+    Deserialize,
+)]
+#[serde(transparent)]
 #[repr(transparent)]
 pub struct VarInt(pub i32);
 
 impl VarInt {
-    /// The maximum number of bytes a VarInt could occupy when read from and
+    /// The maximum number of bytes a `VarInt` could occupy when read from and
     /// written to the Minecraft protocol.
     pub const MAX_SIZE: usize = 5;
 
@@ -25,11 +44,11 @@ impl VarInt {
         }
     }
 
-    pub fn decode_partial(mut r: impl Read) -> Result<i32, VarIntDecodeError> {
+    pub fn decode_partial<R: Read>(mut r: R) -> Result<i32, VarIntDecodeError> {
         let mut val = 0;
         for i in 0..Self::MAX_SIZE {
             let byte = r.read_u8().map_err(|_| VarIntDecodeError::Incomplete)?;
-            val |= (byte as i32 & 0b01111111) << (i * 7);
+            val |= (i32::from(byte) & 0b01111111) << (i * 7);
             if byte & 0b10000000 == 0 {
                 return Ok(val);
             }
@@ -81,24 +100,12 @@ impl Decode<'_> for VarInt {
         let mut val = 0;
         for i in 0..Self::MAX_SIZE {
             let byte = r.read_u8()?;
-            val |= (byte as i32 & 0b01111111) << (i * 7);
+            val |= (i32::from(byte) & 0b01111111) << (i * 7);
             if byte & 0b10000000 == 0 {
                 return Ok(VarInt(val));
             }
         }
         bail!("VarInt is too large")
-    }
-}
-
-impl From<i32> for VarInt {
-    fn from(i: i32) -> Self {
-        VarInt(i)
-    }
-}
-
-impl From<VarInt> for i32 {
-    fn from(i: VarInt) -> Self {
-        i.0
     }
 }
 

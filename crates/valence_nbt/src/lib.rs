@@ -1,91 +1,31 @@
-//! A library for encoding and decoding Minecraft's [Named Binary Tag] (NBT)
-//! format.
-//!
-//! [Named Binary Tag]: https://minecraft.fandom.com/wiki/NBT_format
-//!
-//! # Examples
-//!
-//! Encode NBT data to its binary form. We are using the [`compound!`] macro to
-//! conveniently construct [`Compound`] values.
-//!
-//! ```rust
-//! use valence_nbt::{compound, to_binary_writer, List};
-//!
-//! let c = compound! {
-//!     "byte" => 5_i8,
-//!     "string" => "hello",
-//!     "list_of_float" => List::Float(vec![
-//!         3.1415,
-//!         2.7182,
-//!         1.4142
-//!     ]),
-//! };
-//!
-//! let mut buf = vec![];
-//!
-//! to_binary_writer(&mut buf, &c, "").unwrap();
-//! ```
-//!
-//! Decode NBT data from its binary form.
-//!
-//! ```rust
-//! use valence_nbt::{compound, from_binary_slice};
-//!
-//! let some_bytes = [10, 0, 0, 3, 0, 3, 105, 110, 116, 0, 0, 222, 173, 0];
-//!
-//! let expected_value = compound! {
-//!     "int" => 0xdead
-//! };
-//!
-//! let (nbt, root_name) = from_binary_slice(&mut some_bytes.as_slice()).unwrap();
-//!
-//! assert_eq!(nbt, expected_value);
-//! assert_eq!(root_name, "");
-//! ```
-//!
-//! # Features
-//!
-//! - `preserve_order`: Causes the order of fields in [`Compound`]s to be
-//! preserved during insertion and deletion at a slight cost to performance.
-//! The iterators on `Compound` can then implement [`DoubleEndedIterator`].
+#![doc = include_str!("../../README.md")]
+// Run locally with `RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features --open`
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
-#![deny(
-    rustdoc::broken_intra_doc_links,
-    rustdoc::private_intra_doc_links,
-    rustdoc::missing_crate_level_docs,
-    rustdoc::invalid_codeblock_attributes,
-    rustdoc::invalid_rust_codeblocks,
-    rustdoc::bare_urls
-)]
-#![warn(
-    trivial_casts,
-    trivial_numeric_casts,
-    unused_lifetimes,
-    unused_import_braces,
-    clippy::dbg_macro
-)]
-#![allow(clippy::unusual_byte_groupings)]
-
+#[cfg(feature = "binary")]
+#[cfg_attr(docsrs, doc(cfg(feature = "binary")))]
+pub use binary::{from_binary, to_binary};
 pub use compound::Compound;
-pub use error::Error;
-pub use from_binary_slice::from_binary_slice;
-pub use tag::Tag;
-pub use to_binary_writer::to_binary_writer;
-pub use value::{List, Value};
+pub use error::*;
+pub use list::List;
+pub use tag::*;
+pub use value::Value;
 
+#[cfg(feature = "binary")]
+#[cfg_attr(docsrs, doc(cfg(feature = "binary")))]
+pub mod binary;
 pub mod compound;
+pub mod conv;
 mod error;
-mod from_binary_slice;
-mod modified_utf8;
+pub mod list;
+#[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+pub mod serde;
+#[cfg(feature = "snbt")]
+#[cfg_attr(docsrs, doc(cfg(feature = "snbt")))]
 pub mod snbt;
-mod to_binary_writer;
-pub mod value;
-
 mod tag;
-#[cfg(test)]
-mod tests;
-
-type Result<T> = std::result::Result<T, Error>;
+pub mod value;
 
 /// A convenience macro for constructing [`Compound`]s.
 ///
@@ -118,16 +58,45 @@ type Result<T> = std::result::Result<T, Error>;
 ///
 /// println!("{c:?}");
 /// ```
+///
+/// It is also possible to specify a custom string type like this:
+/// ```
+/// # use std::borrow::Cow;
+///
+/// use valence_nbt::compound;
+///
+/// let c = compound! { <Cow<str>>
+///     "foo" => 123_i8,
+/// };
+///
+/// println!("{c:?}");
+/// ```
 #[macro_export]
 macro_rules! compound {
-    ($($key:expr => $value:expr),* $(,)?) => {
-        <$crate::Compound as ::std::iter::FromIterator<(::std::string::String, $crate::Value)>>::from_iter([
+    (<$string_type:ty> $($key:expr => $value:expr),* $(,)?) => {
+        <$crate::Compound<$string_type> as ::std::iter::FromIterator<($string_type, $crate::Value<$string_type>)>>::from_iter([
             $(
                 (
-                    ::std::convert::Into::<::std::string::String>::into($key),
-                    ::std::convert::Into::<$crate::Value>::into($value)
+                    ::std::convert::Into::<$string_type>::into($key),
+                    ::std::convert::Into::<$crate::Value<$string_type>>::into($value)
                 ),
             )*
         ])
+    };
+
+    ($($key:expr => $value:expr),* $(,)?) => {
+        compound!(<::std::string::String> $($key => $value),*)
+    };
+}
+
+/// A convenience macro for constructing [`Compound`]`<`[`JavaString`]`>`s
+///
+/// [`JavaString`]: java_string::JavaString
+#[cfg(feature = "java_string")]
+#[cfg_attr(docsrs, doc(cfg(feature = "java_string")))]
+#[macro_export]
+macro_rules! jcompound {
+    ($($key:expr => $value:expr),* $(,)?) => {
+        compound!(<::java_string::JavaString> $($key => $value),*)
     }
 }

@@ -2,11 +2,28 @@ use std::io::Write;
 
 use anyhow::bail;
 use byteorder::ReadBytesExt;
+use derive_more::{From, Into};
+use serde::{Deserialize, Serialize};
 
-use crate::{Decode, Encode, Result};
+use crate::{Decode, Encode};
 
 /// An `i64` encoded with variable length.
-#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    From,
+    Into,
+    Serialize,
+    Deserialize,
+)]
+#[serde(transparent)]
 #[repr(transparent)]
 pub struct VarLong(pub i64);
 
@@ -32,27 +49,27 @@ impl Encode for VarLong {
         any(target_arch = "x86", target_arch = "x86_64"),
         not(target_os = "macos")
     ))]
-    fn encode(&self, mut w: impl Write) -> Result<()> {
+    fn encode(&self, mut w: impl Write) -> anyhow::Result<()> {
         #[cfg(target_arch = "x86")]
         use std::arch::x86::*;
         #[cfg(target_arch = "x86_64")]
         use std::arch::x86_64::*;
 
         // Break the number into 7-bit parts and spread them out into a vector
-        let mut res = [0u64; 2];
+        let mut res = [0_u64; 2];
         {
             let x = self.0 as u64;
 
             res[0] = unsafe { _pdep_u64(x, 0x7f7f7f7f7f7f7f7f) };
-            res[1] = unsafe { _pdep_u64(x >> 56, 0x000000000000017f) };
-        }
+            res[1] = unsafe { _pdep_u64(x >> 56, 0x000000000000017f) }
+        };
         let stage1: __m128i = unsafe { std::mem::transmute(res) };
 
         // Create a mask for where there exist values
         // This signed comparison works because all MSBs should be cleared at this point
         // Also handle the special case when num == 0
         let minimum =
-            unsafe { _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xffu8 as i8) };
+            unsafe { _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff_u8 as i8) };
         let exists = unsafe { _mm_or_si128(_mm_cmpgt_epi8(stage1, _mm_setzero_si128()), minimum) };
         let bits = unsafe { _mm_movemask_epi8(exists) };
 
@@ -66,7 +83,7 @@ impl Encode for VarLong {
         // Shift it down 1 byte so the last MSB is the only one set, and make sure only
         // the MSB is set
         let shift = unsafe { _mm_bsrli_si128(mask, 1) };
-        let msbmask = unsafe { _mm_and_si128(shift, _mm_set1_epi8(128u8 as i8)) };
+        let msbmask = unsafe { _mm_and_si128(shift, _mm_set1_epi8(128_u8 as i8)) };
 
         // Merge the MSB bits into the vector
         let merged = unsafe { _mm_or_si128(stage1, msbmask) };
@@ -81,7 +98,7 @@ impl Encode for VarLong {
         not(any(target_arch = "x86", target_arch = "x86_64")),
         target_os = "macos"
     ))]
-    fn encode(&self, mut w: impl Write) -> Result<()> {
+    fn encode(&self, mut w: impl Write) -> anyhow::Result<()> {
         use byteorder::WriteBytesExt;
 
         let mut val = self.0 as u64;
@@ -97,11 +114,11 @@ impl Encode for VarLong {
 }
 
 impl Decode<'_> for VarLong {
-    fn decode(r: &mut &[u8]) -> Result<Self> {
+    fn decode(r: &mut &[u8]) -> anyhow::Result<Self> {
         let mut val = 0;
         for i in 0..Self::MAX_SIZE {
             let byte = r.read_u8()?;
-            val |= (byte as i64 & 0b01111111) << (i * 7);
+            val |= (i64::from(byte) & 0b01111111) << (i * 7);
             if byte & 0b10000000 == 0 {
                 return Ok(VarLong(val));
             }

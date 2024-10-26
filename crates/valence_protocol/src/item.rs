@@ -1,107 +1,78 @@
 use std::io::Write;
 
-use anyhow::{ensure, Context};
+pub use valence_generated::item::ItemKind;
 use valence_nbt::Compound;
 
-use crate::block::BlockKind;
-use crate::var_int::VarInt;
-use crate::{Decode, Encode, Result};
+use crate::{Decode, Encode};
 
-include!(concat!(env!("OUT_DIR"), "/item.rs"));
-
-#[derive(Clone, PartialEq, Debug)]
+/// A stack of items in an inventory.
+#[derive(Clone, PartialEq, Debug, Default)]
 pub struct ItemStack {
     pub item: ItemKind,
-    count: u8,
+    pub count: i8,
     pub nbt: Option<Compound>,
 }
 
-pub const STACK_MIN: u8 = 1;
-pub const STACK_MAX: u8 = 127;
-
 impl ItemStack {
+    pub const EMPTY: ItemStack = ItemStack {
+        item: ItemKind::Air,
+        count: 0,
+        nbt: None,
+    };
+
     #[must_use]
-    pub fn new(item: ItemKind, count: u8, nbt: Option<Compound>) -> Self {
-        Self {
-            item,
-            count: count.clamp(STACK_MIN, STACK_MAX),
-            nbt,
-        }
+    pub const fn new(item: ItemKind, count: i8, nbt: Option<Compound>) -> Self {
+        Self { item, count, nbt }
     }
 
     #[must_use]
-    pub fn with_count(mut self, count: u8) -> Self {
-        self.set_count(count);
+    pub const fn with_count(mut self, count: i8) -> Self {
+        self.count = count;
         self
     }
 
     #[must_use]
-    pub fn with_item(mut self, item: ItemKind) -> Self {
+    pub const fn with_item(mut self, item: ItemKind) -> Self {
         self.item = item;
         self
     }
 
     #[must_use]
-    pub fn with_nbt(mut self, nbt: impl Into<Option<Compound>>) -> Self {
+    pub fn with_nbt<C: Into<Option<Compound>>>(mut self, nbt: C) -> Self {
         self.nbt = nbt.into();
         self
     }
 
-    /// Gets the number of items in this stack.
-    pub fn count(&self) -> u8 {
-        self.count
-    }
-
-    /// Sets the number of items in this stack. Values are clamped to 1-127,
-    /// which are the positive values accepted by clients.
-    pub fn set_count(&mut self, count: u8) {
-        self.count = count.clamp(STACK_MIN, STACK_MAX);
+    pub const fn is_empty(&self) -> bool {
+        matches!(self.item, ItemKind::Air) || self.count <= 0
     }
 }
 
-impl Default for ItemStack {
-    fn default() -> Self {
-        Self::new(ItemKind::Air, 1, None)
-    }
-}
-
-impl Encode for Option<ItemStack> {
-    fn encode(&self, w: impl Write) -> Result<()> {
-        self.as_ref().encode(w)
-    }
-}
-
-impl<'a> Encode for Option<&'a ItemStack> {
-    fn encode(&self, mut w: impl Write) -> Result<()> {
-        match *self {
-            None => false.encode(w),
-            Some(s) => {
-                true.encode(&mut w)?;
-                s.item.encode(&mut w)?;
-                s.count.encode(&mut w)?;
-                match &s.nbt {
-                    Some(n) => n.encode(w),
-                    None => 0u8.encode(w),
-                }
+impl Encode for ItemStack {
+    fn encode(&self, mut w: impl Write) -> anyhow::Result<()> {
+        if self.is_empty() {
+            false.encode(w)
+        } else {
+            true.encode(&mut w)?;
+            self.item.encode(&mut w)?;
+            self.count.encode(&mut w)?;
+            match &self.nbt {
+                Some(n) => n.encode(w),
+                None => 0_u8.encode(w),
             }
         }
     }
 }
 
-impl Decode<'_> for Option<ItemStack> {
-    fn decode(r: &mut &[u8]) -> Result<Self> {
+impl Decode<'_> for ItemStack {
+    fn decode(r: &mut &[u8]) -> anyhow::Result<Self> {
         let present = bool::decode(r)?;
         if !present {
-            return Ok(None);
-        }
+            return Ok(ItemStack::EMPTY);
+        };
 
         let item = ItemKind::decode(r)?;
-        let count = u8::decode(r)?;
-
-        ensure!(
-            (STACK_MIN..=STACK_MAX).contains(&count),
-            "invalid item stack count (got {count}, expected {STACK_MIN}..={STACK_MAX})"
-        );
+        let count = i8::decode(r)?;
 
         let nbt = if let [0, rest @ ..] = *r {
             *r = rest;
@@ -110,22 +81,14 @@ impl Decode<'_> for Option<ItemStack> {
             Some(Compound::decode(r)?)
         };
 
-        Ok(Some(ItemStack { item, count, nbt }))
-    }
-}
+        let stack = ItemStack { item, count, nbt };
 
-impl Encode for ItemKind {
-    fn encode(&self, w: impl Write) -> Result<()> {
-        VarInt(self.to_raw() as i32).encode(w)
-    }
-}
-
-impl Decode<'_> for ItemKind {
-    fn decode(r: &mut &[u8]) -> Result<Self> {
-        let id = VarInt::decode(r)?.0;
-        let errmsg = "invalid item ID";
-
-        ItemKind::from_raw(id.try_into().context(errmsg)?).context(errmsg)
+        // Normalize empty item stacks.
+        if stack.is_empty() {
+            Ok(ItemStack::EMPTY)
+        } else {
+            Ok(stack)
+        }
     }
 }
 
@@ -134,29 +97,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn item_kind_to_block_kind() {
-        assert_eq!(
-            ItemKind::Cauldron.to_block_kind(),
-            Some(BlockKind::Cauldron)
-        );
-    }
+    fn empty_item_stack_is_empty() {
+        let air_stack = ItemStack::new(ItemKind::Air, 10, None);
+        let less_then_one_stack = ItemStack::new(ItemKind::Stone, 0, None);
 
-    #[test]
-    fn block_state_to_item() {
-        assert_eq!(BlockKind::Torch.to_item_kind(), ItemKind::Torch);
-        assert_eq!(BlockKind::WallTorch.to_item_kind(), ItemKind::Torch);
+        assert!(air_stack.is_empty());
+        assert!(less_then_one_stack.is_empty());
 
-        assert_eq!(BlockKind::Cauldron.to_item_kind(), ItemKind::Cauldron);
-        assert_eq!(BlockKind::LavaCauldron.to_item_kind(), ItemKind::Cauldron);
+        assert!(ItemStack::EMPTY.is_empty());
 
-        assert_eq!(BlockKind::NetherPortal.to_item_kind(), ItemKind::Air);
-    }
+        let not_empty_stack = ItemStack::new(ItemKind::Stone, 10, None);
 
-    #[test]
-    fn item_stack_clamps_count() {
-        let mut stack = ItemStack::new(ItemKind::Stone, 200, None);
-        assert_eq!(stack.count, STACK_MAX);
-        stack.set_count(201);
-        assert_eq!(stack.count, STACK_MAX);
+        assert!(!not_empty_stack.is_empty());
     }
 }

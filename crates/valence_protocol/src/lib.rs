@@ -1,110 +1,6 @@
-//! A library for interacting with the Minecraft (Java Edition) network
-//! protocol.
-//!
-//! The API is centered around the [`Encode`] and [`Decode`] traits. Clientbound
-//! and serverbound packets are defined in the [`packet`] module. Packets are
-//! encoded and decoded using the [`PacketEncoder`] and [`PacketDecoder`] types.
-//!
-//! [`PacketEncoder`]: encoder::PacketEncoder
-//! [`PacketDecoder`]: decoder::PacketDecoder
-//!
-//! # Examples
-//!
-//! ```
-//! use valence_protocol::decoder::PacketDecoder;
-//! use valence_protocol::encoder::PacketEncoder;
-//! use valence_protocol::packet::c2s::play::RenameItemC2s;
-//! use valence_protocol::Packet;
-//!
-//! let mut enc = PacketEncoder::new();
-//!
-//! let outgoing = RenameItemC2s {
-//!     item_name: "Hello!",
-//! };
-//!
-//! enc.append_packet(&outgoing).unwrap();
-//!
-//! let mut dec = PacketDecoder::new();
-//!
-//! dec.queue_bytes(enc.take());
-//!
-//! let frame = dec.try_next_packet().unwrap().unwrap();
-//!
-//! let incoming = RenameItemC2s::decode_packet(&mut &frame[..]).unwrap();
-//!
-//! assert_eq!(outgoing.item_name, incoming.item_name);
-//! ```
-//!
-//! # Stability
-//!
-//! The Minecraft protocol is not stable. Updates to Minecraft may change the
-//! protocol in subtle or drastic ways. In response to this, `valence_protocol`
-//! aims to support only the most recent version of the game (excluding
-//! snapshots, pre-releases, etc). An update to Minecraft often requires a
-//! breaking change to the library.
-//!
-//! `valence_protocol` is versioned in lockstep with `valence`. The currently
-//! supported Minecraft version can be checked with the [`PROTOCOL_VERSION`] or
-//! [`MINECRAFT_VERSION`] constants.
-//!
-//! # Feature Flags
-//!
-//! TODO
+#![doc = include_str!("../README.md")]
 
-#![deny(
-    rustdoc::broken_intra_doc_links,
-    rustdoc::private_intra_doc_links,
-    rustdoc::missing_crate_level_docs,
-    rustdoc::invalid_codeblock_attributes,
-    rustdoc::invalid_rust_codeblocks,
-    rustdoc::bare_urls
-)]
-#![warn(
-    trivial_casts,
-    trivial_numeric_casts,
-    unused_lifetimes,
-    unused_import_braces,
-    clippy::dbg_macro
-)]
-#![allow(clippy::unusual_byte_groupings)]
-
-// Allows us to use our own proc macros internally.
-extern crate self as valence_protocol;
-
-use std::fmt;
-use std::io::Write;
-
-pub use anyhow::{Error, Result};
-pub use valence_protocol_macros::{ident, Decode, Encode, Packet};
-pub use {bytes, uuid, valence_nbt as nbt};
-
-/// The Minecraft protocol version this library currently targets.
-pub const PROTOCOL_VERSION: i32 = 762;
-
-/// The stringified name of the Minecraft version this library currently
-/// targets.
-pub const MINECRAFT_VERSION: &str = "1.19.4";
-
-pub mod array;
-pub mod block;
-pub mod block_pos;
-pub mod byte_angle;
-pub mod decoder;
-pub mod enchant;
-pub mod encoder;
-pub mod ident;
-mod impls;
-pub mod item;
-pub mod packet;
-pub mod raw;
-pub mod sound;
-pub mod text;
-pub mod translation_key;
-pub mod types;
-pub mod var_int;
-pub mod var_long;
-
-/// Used only by proc macros. Not public API.
+/// Used only by macros. Not public API.
 #[doc(hidden)]
 pub mod __private {
     pub use anyhow::{anyhow, bail, ensure, Context, Result};
@@ -113,8 +9,101 @@ pub mod __private {
     pub use crate::{Decode, Encode, Packet};
 }
 
+// This allows us to use our own proc macros internally.
+extern crate self as valence_protocol;
+
+mod array;
+mod biome_pos;
+mod bit_set;
+pub mod block_pos;
+mod bounded;
+mod byte_angle;
+pub mod chunk_pos;
+pub mod chunk_section_pos;
+pub mod decode;
+mod difficulty;
+mod direction;
+pub mod encode;
+pub mod game_mode;
+mod global_pos;
+mod hand;
+mod impls;
+pub mod item;
+pub mod packets;
+pub mod profile;
+mod raw;
+pub mod sound;
+pub mod var_int;
+mod var_long;
+mod velocity;
+
+use std::io::Write;
+
+use anyhow::Context;
+pub use array::FixedArray;
+pub use biome_pos::BiomePos;
+pub use bit_set::FixedBitSet;
+pub use block::{BlockKind, BlockState};
+pub use block_pos::BlockPos;
+pub use bounded::Bounded;
+pub use byte_angle::ByteAngle;
+pub use chunk_pos::ChunkPos;
+pub use chunk_section_pos::ChunkSectionPos;
+pub use decode::PacketDecoder;
+use derive_more::{From, Into};
+pub use difficulty::Difficulty;
+pub use direction::Direction;
+pub use encode::{PacketEncoder, WritePacket};
+pub use game_mode::GameMode;
+pub use global_pos::GlobalPos;
+pub use hand::Hand;
+pub use ident::ident;
+pub use item::{ItemKind, ItemStack};
+pub use packets::play::particle_s2c::Particle;
+pub use raw::RawBytes;
+use serde::{Deserialize, Serialize};
+pub use sound::Sound;
+pub use text::Text;
+pub use valence_generated::{block, packet_id, status_effects};
+pub use valence_ident::Ident;
+pub use valence_protocol_macros::{Decode, Encode, Packet};
+pub use var_int::VarInt;
+pub use var_long::VarLong;
+pub use velocity::Velocity;
+pub use {
+    anyhow, bytes, uuid, valence_ident as ident, valence_math as math, valence_nbt as nbt,
+    valence_text as text,
+};
+
 /// The maximum number of bytes in a single Minecraft packet.
 pub const MAX_PACKET_SIZE: i32 = 2097152;
+
+/// The Minecraft protocol version this library currently targets.
+pub const PROTOCOL_VERSION: i32 = 763;
+
+/// The stringified name of the Minecraft version this library currently
+/// targets.
+pub const MINECRAFT_VERSION: &str = "1.20.1";
+
+/// How large a packet should be before it is compressed by the packet encoder.
+///
+/// If the inner value is >= 0, then packets with encoded lengths >= to this
+/// value will be compressed. If the value is negative, then compression is
+/// disabled and no packets are compressed.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, From, Into)]
+pub struct CompressionThreshold(pub i32);
+
+impl CompressionThreshold {
+    /// No compression.
+    pub const DEFAULT: Self = Self(-1);
+}
+
+/// No compression.
+impl Default for CompressionThreshold {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
 
 /// The `Encode` trait allows objects to be written to the Minecraft protocol.
 /// It is the inverse of [`Decode`].
@@ -127,9 +116,10 @@ pub const MAX_PACKET_SIZE: i32 = 2097152;
 /// type definition.
 ///
 /// For enums, the variant to encode is marked by a leading [`VarInt`]
-/// discriminant (tag). The discriminant value can be changed using the `#[tag =
-/// ...]` attribute on the variant in question. Discriminant values are assigned
-/// to variants using rules similar to regular enum discriminants.
+/// discriminant (tag). The discriminant value can be changed using the
+/// `#[packet(tag = ...)]` attribute on the variant in question. Discriminant
+/// values are assigned to variants using rules similar to regular enum
+/// discriminants.
 ///
 /// ```
 /// use valence_protocol::Encode;
@@ -145,7 +135,7 @@ pub const MAX_PACKET_SIZE: i32 = 2097152;
 /// enum MyEnum {
 ///     First,  // tag = 0
 ///     Second, // tag = 1
-///     #[tag = 25]
+///     #[packet(tag = 25)]
 ///     Third, // tag = 25
 ///     Fourth, // tag = 26
 /// }
@@ -173,21 +163,31 @@ pub trait Encode {
     /// that were originally written must be consumed during the decoding.
     ///
     /// [`decode`]: Decode::decode
-    fn encode(&self, w: impl Write) -> Result<()>;
+    fn encode(&self, w: impl Write) -> anyhow::Result<()>;
 
-    /// Hack to get around the lack of specialization. Not public API.
-    #[doc(hidden)]
-    fn encode_slice(slice: &[Self], w: impl Write) -> Result<()>
+    /// Like [`Encode::encode`], except that a whole slice of values is encoded.
+    ///
+    /// This method must be semantically equivalent to encoding every element of
+    /// the slice in sequence with no leading length prefix (which is exactly
+    /// what the default implementation does), but a more efficient
+    /// implementation may be used.
+    ///
+    /// This method is important for some types like `u8` where the entire slice
+    /// can be encoded in a single call to [`write_all`]. Because impl
+    /// specialization is unavailable in stable Rust at the time of writing,
+    /// we must make the slice specialization part of this trait.
+    ///
+    /// [`write_all`]: Write::write_all
+    fn encode_slice(slice: &[Self], mut w: impl Write) -> anyhow::Result<()>
     where
         Self: Sized,
     {
-        let _ = (slice, w);
-        unimplemented!("no implementation of `encode_slice`")
-    }
+        for value in slice {
+            value.encode(&mut w)?;
+        }
 
-    /// Hack to get around the lack of specialization. Not public API.
-    #[doc(hidden)]
-    const HAS_ENCODE_SLICE: bool = false;
+        Ok(())
+    }
 }
 
 /// The `Decode` trait allows objects to be read from the Minecraft protocol. It
@@ -204,9 +204,10 @@ pub trait Encode {
 /// type definition.
 ///
 /// For enums, the variant to decode is determined by a leading [`VarInt`]
-/// discriminant (tag). The discriminant value can be changed using the `#[tag =
-/// ...]` attribute on the variant in question. Discriminant values are assigned
-/// to variants using rules similar to regular enum discriminants.
+/// discriminant (tag). The discriminant value can be changed using the
+/// `#[packet(tag = ...)]` attribute on the variant in question. Discriminant
+/// values are assigned to variants using rules similar to regular enum
+/// discriminants.
 ///
 /// ```
 /// use valence_protocol::Decode;
@@ -221,7 +222,7 @@ pub trait Encode {
 /// enum MyEnum {
 ///     First,  // tag = 0
 ///     Second, // tag = 1
-///     #[tag = 25]
+///     #[packet(tag = 25)]
 ///     Third, // tag = 25
 ///     Fourth, // tag = 26
 /// }
@@ -245,57 +246,54 @@ pub trait Decode<'a>: Sized {
     ///
     /// Implementations of `Decode` are expected to shrink the slice from the
     /// front as bytes are read.
-    fn decode(r: &mut &'a [u8]) -> Result<Self>;
+    fn decode(r: &mut &'a [u8]) -> anyhow::Result<Self>;
 }
 
-/// Like [`Encode`] + [`Decode`], but implementations must read and write a
-/// leading [`VarInt`] packet ID before any other data.
+/// Types considered to be Minecraft packets.
 ///
-/// # Deriving
-///
-/// This trait can be implemented automatically by using the
-/// [`Packet`][macro] derive macro. The trait is implemented by reading or
-/// writing the packet ID provided in the `#[packet_id = ...]` helper attribute
-/// followed by a call to [`Encode::encode`] or [`Decode::decode`]. The target
-/// type must implement [`Encode`], [`Decode`], and [`fmt::Debug`].
-///
-/// ```
-/// use valence_protocol::{Decode, Encode, Packet};
-///
-/// #[derive(Encode, Decode, Packet, Debug)]
-/// #[packet_id = 42]
-/// struct MyStruct {
-///     first: i32,
-/// }
-///
-/// let value = MyStruct { first: 123 };
-/// let mut buf = vec![];
-///
-/// value.encode_packet(&mut buf).unwrap();
-/// println!("{buf:?}");
-/// ```
-///
-/// [macro]: valence_protocol_macros::Packet
-/// [`VarInt`]: var_int::VarInt
-pub trait Packet<'a>: Sized + fmt::Debug {
-    /// The packet returned by [`Self::packet_id`]. If the packet ID is not
-    /// statically known, then a negative value is used instead.
-    const PACKET_ID: i32 = -1;
-    /// Returns the ID of this packet.
-    fn packet_id(&self) -> i32;
-    /// Returns the name of this packet, typically without whitespace or
-    /// additional formatting.
-    fn packet_name(&self) -> &str;
-    /// Like [`Encode::encode`], but a leading [`VarInt`] packet ID must be
-    /// written first.
-    ///
-    /// [`VarInt`]: var_int::VarInt
-    fn encode_packet(&self, w: impl Write) -> Result<()>;
-    /// Like [`Decode::decode`], but a leading [`VarInt`] packet ID must be read
-    /// first.
-    ///
-    /// [`VarInt`]: var_int::VarInt
-    fn decode_packet(r: &mut &'a [u8]) -> Result<Self>;
+/// In serialized form, a packet begins with a [`VarInt`] packet ID followed by
+/// the body of the packet. If present, the implementations of [`Encode`] and
+/// [`Decode`] on `Self` are expected to only encode/decode the _body_ of this
+/// packet without the leading ID.
+pub trait Packet: std::fmt::Debug {
+    /// The leading `VarInt` ID of this packet.
+    const ID: i32;
+    /// The name of this packet for debugging purposes.
+    const NAME: &'static str;
+    /// The side this packet is intended for.
+    const SIDE: PacketSide;
+    /// The state in which this packet is used.
+    const STATE: PacketState;
+
+    /// Encodes this packet's `VarInt` ID first, followed by the packet's body.
+    fn encode_with_id(&self, mut w: impl Write) -> anyhow::Result<()>
+    where
+        Self: Encode,
+    {
+        VarInt(Self::ID)
+            .encode(&mut w)
+            .context("failed to encode packet ID")?;
+
+        self.encode(w)
+    }
+}
+
+/// The side a packet is intended for.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+pub enum PacketSide {
+    /// Server -> Client
+    Clientbound,
+    /// Client -> Server
+    Serverbound,
+}
+
+/// The statein  which a packet is used.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+pub enum PacketState {
+    Handshaking,
+    Status,
+    Login,
+    Play,
 }
 
 #[allow(dead_code)]
@@ -306,13 +304,18 @@ mod tests {
     use bytes::BytesMut;
 
     use super::*;
-    use crate::decoder::{decode_packet, PacketDecoder};
-    use crate::encoder::PacketEncoder;
-    use crate::packet::c2s::play::HandSwingC2s;
-    use crate::packet::C2sPlayPacket;
+    use crate::block_pos::BlockPos;
+    use crate::decode::PacketDecoder;
+    use crate::encode::PacketEncoder;
+    use crate::hand::Hand;
+    use crate::item::{ItemKind, ItemStack};
+    use crate::text::{IntoText, Text};
+    use crate::var_int::VarInt;
+    use crate::var_long::VarLong;
+    use crate::Ident;
 
     #[derive(Encode, Decode, Packet, Debug)]
-    #[packet_id = 1]
+    #[packet(id = 1, side = PacketSide::Clientbound)]
     struct RegularStruct {
         foo: i32,
         bar: bool,
@@ -320,58 +323,32 @@ mod tests {
     }
 
     #[derive(Encode, Decode, Packet, Debug)]
-    #[packet_id = 2]
+    #[packet(id = 2, side = PacketSide::Clientbound)]
     struct UnitStruct;
 
     #[derive(Encode, Decode, Packet, Debug)]
-    #[packet_id = 3]
-    struct EmptyStruct {}
+    #[packet(id = 3, side = PacketSide::Clientbound)]
+    struct EmptyStruct;
 
     #[derive(Encode, Decode, Packet, Debug)]
-    #[packet_id = 4]
+    #[packet(id = 4, side = PacketSide::Clientbound)]
     struct TupleStruct(i32, bool, f64);
 
     #[derive(Encode, Decode, Packet, Debug)]
-    #[packet_id = 5]
+    #[packet(id = 5, side = PacketSide::Clientbound)]
     struct StructWithGenerics<'z, T = ()> {
         foo: &'z str,
         bar: T,
     }
 
     #[derive(Encode, Decode, Packet, Debug)]
-    #[packet_id = 6]
+    #[packet(id = 6, side = PacketSide::Clientbound)]
     struct TupleStructWithGenerics<'z, T = ()>(&'z str, i32, T);
 
-    #[derive(Encode, Decode, Packet, Debug)]
-    #[packet_id = 7]
-    enum RegularEnum {
-        Empty,
-        Tuple(i32, bool, f64),
-        Fields { foo: i32, bar: bool, baz: f64 },
-    }
-
-    #[derive(Encode, Decode, Packet, Debug)]
-    #[packet_id = 8]
-    enum EmptyEnum {}
-
-    #[derive(Encode, Decode, Packet, Debug)]
-    #[packet_id = 0xbeef]
-    enum EnumWithGenericsAndTags<'z, T = ()> {
-        #[tag = 5]
-        First {
-            foo: &'z str,
-        },
-        Second(&'z str),
-        #[tag = 0xff]
-        Third,
-        #[tag = 0]
-        Fourth(T),
-    }
-
-    #[allow(unconditional_recursion)]
+    #[allow(unconditional_recursion, clippy::extra_unused_type_parameters)]
     fn assert_has_impls<'a, T>()
     where
-        T: Encode + Decode<'a> + Packet<'a>,
+        T: Encode + Decode<'a> + Packet,
     {
         assert_has_impls::<RegularStruct>();
         assert_has_impls::<UnitStruct>();
@@ -379,45 +356,20 @@ mod tests {
         assert_has_impls::<TupleStruct>();
         assert_has_impls::<StructWithGenerics>();
         assert_has_impls::<TupleStructWithGenerics>();
-        assert_has_impls::<RegularEnum>();
-        assert_has_impls::<EmptyEnum>();
-        assert_has_impls::<EnumWithGenericsAndTags>();
     }
 
     #[test]
     fn packet_name() {
-        assert_eq!(UnitStruct.packet_name(), "UnitStruct");
-        assert_eq!(RegularEnum::Empty.packet_name(), "RegularEnum");
-        assert_eq!(
-            StructWithGenerics {
-                foo: "blah",
-                bar: ()
-            }
-            .packet_name(),
-            "StructWithGenerics"
-        );
-        assert_eq!(
-            C2sPlayPacket::HandSwingC2s(HandSwingC2s {
-                hand: Default::default()
-            })
-            .packet_name(),
-            "HandSwingC2s"
-        );
+        assert_eq!(RegularStruct::NAME, "RegularStruct");
+        assert_eq!(UnitStruct::NAME, "UnitStruct");
+        assert_eq!(StructWithGenerics::<()>::NAME, "StructWithGenerics");
     }
-
-    use crate::block_pos::BlockPos;
-    use crate::ident::Ident;
-    use crate::item::{ItemKind, ItemStack};
-    use crate::text::{Text, TextFormat};
-    use crate::types::Hand;
-    use crate::var_int::VarInt;
-    use crate::var_long::VarLong;
 
     #[cfg(feature = "encryption")]
     const CRYPT_KEY: [u8; 16] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
     #[derive(PartialEq, Debug, Encode, Decode, Packet)]
-    #[packet_id = 42]
+    #[packet(id = 42, side = PacketSide::Clientbound)]
     struct TestPacket<'a> {
         a: bool,
         b: u8,
@@ -427,7 +379,7 @@ mod tests {
         f: BlockPos,
         g: Hand,
         h: Ident<Cow<'a, str>>,
-        i: Option<ItemStack>,
+        i: ItemStack,
         j: Text,
         k: VarInt,
         l: VarLong,
@@ -447,7 +399,7 @@ mod tests {
                 f: BlockPos::new(1, 2, 3),
                 g: Hand::Off,
                 h: Ident::new("minecraft:whatever").unwrap(),
-                i: Some(ItemStack::new(ItemKind::WoodenSword, 12, None)),
+                i: ItemStack::new(ItemKind::WoodenSword, 12, None),
                 j: "my ".into_text() + "fancy".italic() + " text",
                 k: VarInt(123),
                 l: VarLong(456),
@@ -461,7 +413,7 @@ mod tests {
     fn check_test_packet(dec: &mut PacketDecoder, string: &str) {
         let frame = dec.try_next_packet().unwrap().unwrap();
 
-        let pkt = decode_packet::<TestPacket>(&frame).unwrap();
+        let pkt = frame.decode::<TestPacket>().unwrap();
 
         assert_eq!(&pkt, &TestPacket::new(string));
     }
@@ -474,7 +426,7 @@ mod tests {
 
         enc.append_packet(&TestPacket::new("first")).unwrap();
         #[cfg(feature = "compression")]
-        enc.set_compression(Some(0));
+        enc.set_compression(0.into());
         enc.append_packet(&TestPacket::new("second")).unwrap();
         buf.unsplit(enc.take());
         #[cfg(feature = "encryption")]
@@ -491,7 +443,7 @@ mod tests {
         check_test_packet(&mut dec, "first");
 
         #[cfg(feature = "compression")]
-        dec.set_compression(Some(0));
+        dec.set_compression(0.into());
 
         check_test_packet(&mut dec, "second");
 

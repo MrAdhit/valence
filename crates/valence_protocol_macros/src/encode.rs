@@ -5,7 +5,7 @@ use syn::{parse2, Data, DeriveInput, Error, Fields, LitInt, Result};
 
 use crate::{add_trait_bounds, pair_variants_with_discriminants};
 
-pub fn derive_encode(item: TokenStream) -> Result<TokenStream> {
+pub(super) fn derive_encode(item: TokenStream) -> Result<TokenStream> {
     let mut input = parse2::<DeriveInput>(item)?;
 
     let input_name = input.ident;
@@ -59,7 +59,7 @@ pub fn derive_encode(item: TokenStream) -> Result<TokenStream> {
             })
         }
         Data::Enum(enum_) => {
-            let variants = pair_variants_with_discriminants(enum_.variants.into_iter())?;
+            let variants = pair_variants_with_discriminants(enum_.variants)?;
 
             let encode_arms = variants
                 .iter()
@@ -143,7 +143,7 @@ pub fn derive_encode(item: TokenStream) -> Result<TokenStream> {
 
             Ok(quote! {
                 #[allow(unused_imports, unreachable_code)]
-                impl #impl_generics ::valence_protocol::Encode for #input_name #ty_generics
+                impl #impl_generics ::valence_protocol::__private::Encode for #input_name #ty_generics
                 #where_clause
                 {
                     fn encode(&self, mut _w: impl ::std::io::Write) -> ::valence_protocol::__private::Result<()> {

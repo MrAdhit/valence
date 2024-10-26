@@ -1,62 +1,59 @@
 use std::io::Write;
 use std::mem;
 
-use crate::{Decode, Encode, Packet, Result};
+use anyhow::ensure;
+use derive_more::{Deref, DerefMut, From, Into};
+
+use crate::{Bounded, Decode, Encode};
 
 /// While [encoding], the contained slice is written directly to the output
 /// without any length prefix or metadata.
 ///
 /// While [decoding], the remainder of the input is returned as the contained
-/// slice. The input will be at the EOF state after this is finished.
+/// slice. The input will be at the EOF state after this is decoded.
 ///
 /// [encoding]: Encode
 /// [decoding]: Decode
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug)]
+#[derive(
+    Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug, Deref, DerefMut, From, Into,
+)]
 pub struct RawBytes<'a>(pub &'a [u8]);
 
 impl Encode for RawBytes<'_> {
-    fn encode(&self, mut w: impl Write) -> Result<()> {
+    fn encode(&self, mut w: impl Write) -> anyhow::Result<()> {
         Ok(w.write_all(self.0)?)
     }
 }
 
 impl<'a> Decode<'a> for RawBytes<'a> {
-    fn decode(r: &mut &'a [u8]) -> Result<Self> {
+    fn decode(r: &mut &'a [u8]) -> anyhow::Result<Self> {
         Ok(Self(mem::take(r)))
     }
 }
 
-impl<'a> From<&'a [u8]> for RawBytes<'a> {
-    fn from(value: &'a [u8]) -> Self {
-        Self(value)
+/// Raises an encoding error if the inner slice is longer than `MAX_BYTES`.
+impl<const MAX_BYTES: usize> Encode for Bounded<RawBytes<'_>, MAX_BYTES> {
+    fn encode(&self, w: impl Write) -> anyhow::Result<()> {
+        ensure!(
+            self.len() <= MAX_BYTES,
+            "cannot encode more than {MAX_BYTES} raw bytes (got {} bytes)",
+            self.len()
+        );
+
+        self.0.encode(w)
     }
 }
 
-impl<'a> From<RawBytes<'a>> for &'a [u8] {
-    fn from(value: RawBytes<'a>) -> Self {
-        value.0
-    }
-}
+/// Raises a decoding error if the remainder of the input is larger than
+/// `MAX_BYTES`.
+impl<'a, const MAX_BYTES: usize> Decode<'a> for Bounded<RawBytes<'a>, MAX_BYTES> {
+    fn decode(r: &mut &'a [u8]) -> anyhow::Result<Self> {
+        ensure!(
+            r.len() <= MAX_BYTES,
+            "remainder of input exceeds max of {MAX_BYTES} bytes (got {} bytes)",
+            r.len()
+        );
 
-/// A fake [`Packet`] which simply reads all data into a slice, or writes all
-/// data from a slice. The packet ID is included in the slice.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug)]
-pub struct RawPacket<'a>(pub &'a [u8]);
-
-impl<'a> Packet<'a> for RawPacket<'a> {
-    fn packet_id(&self) -> i32 {
-        -1
-    }
-
-    fn packet_name(&self) -> &str {
-        "RawPacket"
-    }
-
-    fn encode_packet(&self, mut w: impl Write) -> Result<()> {
-        Ok(w.write_all(self.0)?)
-    }
-
-    fn decode_packet(r: &mut &'a [u8]) -> Result<Self> {
-        Ok(Self(mem::take(r)))
+        Ok(Bounded(RawBytes::decode(r)?))
     }
 }

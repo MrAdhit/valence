@@ -1,45 +1,30 @@
 [package]
 name = "valence_anvil"
-description = "A library for Minecraft's Anvil world format."
-documentation = "https://docs.rs/valence_anvil/"
-repository = "https://github.com/valence-rs/valence/tree/main/crates/valence_anvil"
+description = "Anvil file format support for Valence"
 readme = "README.md"
-license = "MIT"
 keywords = ["anvil", "minecraft", "deserialization"]
 version = "0.1.0"
-authors = ["Ryan Johnson <ryanj00a@gmail.com>", "TerminatorNL <TerminatorNL@users.noreply.github.com>"]
-edition = "2021"
+edition.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
 
-[dependencies]
-byteorder = "1.4.3"
-flate2 = "1.0.25"
-thiserror = "1.0.37"
-num-integer = "0.1.45" # TODO: remove when div_ceil is stabilized.
-valence = { version = "0.2.0", path = "../valence", optional = true }
-valence_nbt = { version = "0.5.0", path = "../valence_nbt" }
-
-[dev-dependencies]
-anyhow = "1.0.68"
-bevy_ecs = "0.10"
-clap = { version = "4.1.4", features = ["derive"] }
-criterion = "0.4.0"
-flume = "0.10.14"
-fs_extra = "1.2.0"
-tempfile = "3.3.0"
-tracing = "0.1.37"
-tracing-subscriber = "0.3.16"
-zip = "0.6.3"
-valence_protocol = { version = "0.1.0", path = "../valence_protocol" }
-
-[dev-dependencies.reqwest]
-version = "0.11.12"
-default-features = false
-# Avoid OpenSSL dependency on Linux.
-features = ["rustls-tls", "blocking", "stream"]
-
-[[bench]]
-name = "world_parsing"
-harness = false
+[lints]
+workspace = true
 
 [features]
-default = ["valence"]
+bevy_plugin = ["dep:bevy_app", "dep:bevy_ecs", "dep:flume", "parsing"]
+parsing = ["dep:valence_server"]
+
+[dependencies]
+bevy_app = { workspace = true, optional = true }
+bevy_ecs = { workspace = true, optional = true }
+bitfield-struct.workspace = true
+bitvec.workspace = true
+byteorder.workspace = true
+flate2.workspace = true
+flume = { workspace = true, optional = true }
+lru.workspace = true
+thiserror.workspace = true
+valence_nbt = { workspace = true, features = ["binary"] }
+valence_server = { workspace = true, optional = true }
